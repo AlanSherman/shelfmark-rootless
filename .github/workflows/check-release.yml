@@ -1,0 +1,35 @@
+name: Check upstream release
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Check every day at midnight UTC
+  workflow_dispatch:
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get latest upstream release
+        id: upstream
+        run: |
+          RELEASE=$(curl -s https://api.github.com/repos/calibrain/shelfmark/releases/latest \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            | jq -r '.tag_name')
+          echo "tag=$RELEASE" >> $GITHUB_OUTPUT
+
+      - name: Get last known release
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: .release-cache
+          key: upstream-release-${{ steps.upstream.outputs.tag }}
+
+      - name: Trigger build if new release
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "New release detected: ${{ steps.upstream.outputs.tag }}"
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/build.yml/dispatches \
+            -d '{"ref":"main","inputs":{"upstream_tag":"${{ steps.upstream.outputs.tag }}"}}'

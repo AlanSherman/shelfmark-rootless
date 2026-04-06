@@ -1,0 +1,9 @@
+# The Docker build context for this repo is tiny — only entrypoint.sh and
+# requirements.txt are COPY-ed from local. Everything else is fetched from
+# upstream inside the Dockerfile.
+.env
+.git
+.gitignore
+*.md
+docker-compose*.yml
+data/

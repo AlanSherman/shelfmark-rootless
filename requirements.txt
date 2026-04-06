@@ -1,0 +1,30 @@
+# Python runtime dependencies for shelfmark (Prowlarr / external-bypasser variant).
+#
+# Based on upstream requirements-base.txt with one change:
+#   requests[socks] -> requests   (SOCKS5/Tor support removed)
+#
+# requirements-shelfmark.txt (Chromium/SeleniumBase) is intentionally excluded —
+# USING_EXTERNAL_BYPASSER=true means the internal bypass stack is never used.
+#
+# When syncing with an upstream release, diff this file against the upstream
+# requirements-base.txt and carry over any new packages or version bumps.
+
+flask
+flask-cors
+flask-socketio
+python-socketio
+requests
+defusedxml
+beautifulsoup4
+tqdm
+dnspython
+gunicorn
+gevent
+gevent-websocket
+psutil
+emoji
+rarfile
+qbittorrent-api
+transmission-rpc
+authlib>=1.6.6,<1.7
+apprise>=1.9.0

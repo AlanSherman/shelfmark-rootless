@@ -1,0 +1,90 @@
+name: Build and push image
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Check every hour
+
+  # Push a tag like v0.9.0 to build against upstream tag v0.9.0 and
+  # publish as ghcr.io/OWNER/shelfmark-rootless:0.9.0 + :latest.
+  push:
+    tags: ['v*']
+
+  # Manually trigger a build against any upstream tag or branch.
+  # Useful for testing a new upstream release before tagging this repo.
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Upstream calibrain/shelfmark tag or branch'
+        required: true
+        default: 'main'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # QEMU lets BuildKit produce arm64 images on an amd64 runner.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Resolve which upstream tag to build against:
+      #   - workflow_dispatch  → the user-supplied input
+      #   - tag push v1.2.3    → v1.2.3 (same tag applied to both repos)
+      - name: Resolve upstream tag
+        id: upstream
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.upstream_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Generate Docker image tags + OCI labels from git metadata.
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            # v1.2.3 tag push  → :1.2.3  :1.2  :latest
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+            # workflow_dispatch → :<upstream_tag>
+            type=raw,value=${{ steps.upstream.outputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+          labels: |
+            org.opencontainers.image.title=shelfmark-custom
+            org.opencontainers.image.description=Lean shelfmark image — no Tor, no Chromium; Prowlarr-only variant
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            UPSTREAM_TAG=${{ steps.upstream.outputs.tag }}
+            BUILD_VERSION=${{ github.sha }}
+          # GitHub Actions cache keeps layers between runs without a registry cache.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
