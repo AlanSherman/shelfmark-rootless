@@ -34,6 +34,7 @@ jobs:
 
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer ${GHCR_TOKEN}" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json" \
             "https://ghcr.io/v2/${REPO}/manifests/${TAG}")
 
           if [ "$STATUS" = "200" ]; then
