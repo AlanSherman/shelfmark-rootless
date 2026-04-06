@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
+      packages: read
     steps:
       - name: Get latest upstream release
         id: upstream
@@ -19,15 +20,32 @@ jobs:
             | jq -r '.tag_name')
           echo "tag=$RELEASE" >> $GITHUB_OUTPUT
 
-      - name: Get last known release
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: .release-cache
-          key: upstream-release-${{ steps.upstream.outputs.tag }}
+      - name: Check if image already exists in registry
+        id: image_check
+        run: |
+          TAG="${{ steps.upstream.outputs.tag }}"
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+
+          # Exchange GitHub token for a ghcr.io pull token, then probe the manifest.
+          GHCR_TOKEN=$(curl -s \
+            -u "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+            "https://ghcr.io/token?scope=repository:${REPO}:pull" \
+            | jq -r '.token')
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${GHCR_TOKEN}" \
+            "https://ghcr.io/v2/${REPO}/manifests/${TAG}")
+
+          if [ "$STATUS" = "200" ]; then
+            echo "Image ghcr.io/${REPO}:${TAG} already exists — skipping build."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Image ghcr.io/${REPO}:${TAG} not found (HTTP ${STATUS}) — will trigger build."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Trigger build if new release
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.image_check.outputs.exists != 'true'
         run: |
           echo "New release detected: ${{ steps.upstream.outputs.tag }}"
           curl -X POST \
